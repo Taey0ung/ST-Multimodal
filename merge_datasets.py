@@ -21,6 +21,11 @@ def copy_all_files(source_dir, target_dir):
     for idx, file_path in enumerate(all_files, 1):
         relative_path = file_path.relative_to(source_dir)
         destination_path = target_dir / relative_path
+
+        if destination_path.exists() and destination_path.stat().st_size == file_path.stat().st_size:
+            print(f"[{idx}/{total}] SKIP (already exists): {relative_path}")
+            continue
+
         print(f"[{idx}/{total}] 복사 중: {relative_path}")
         copy_file_with_speed(file_path, destination_path)
     print("모든 파일 복사 완료!")
@@ -58,6 +63,9 @@ def extract_all_zips(data_dir):
     zip_files = list(data_dir.rglob("*.zip"))
     for zip_path in tqdm(zip_files, desc="압축 해제 진행률", leave=True):
         temp_extract_dir = data_dir / f"temp_extract_{zip_path.stem}"
+        if temp_extract_dir.exists() and any(temp_extract_dir.iterdir()):
+            print(f"SKIP (already extracted): {zip_path.name}")
+            continue
         temp_extract_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             members = zip_ref.namelist()
@@ -251,8 +259,15 @@ def clean_data_except_merged_and_wav(data_dir, merged_csv, wav_dir):
             print(f"폴더 삭제: {item}")
     print("merged_all.csv와 wav 폴더를 제외한 모든 파일/폴더 삭제 완료!")
 
+# 11. segment_id 기준 정렬 함수
+
+def sort_csv_by_segment_id(csv_path):
+    df = pd.read_csv(csv_path)
+    df_sorted = df.sort_values(by="segment_id")
+    df_sorted.to_csv(csv_path, index=False, encoding='utf-8-sig')
+    print(f"segment_id 기준으로 정렬 완료: {csv_path}")
+
 if __name__ == "__main__":
-    pass
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
     copy_all_files(SOURCE_DIR, TARGET_DIR)
     extract_all_zips(TARGET_DIR)
@@ -266,12 +281,12 @@ if __name__ == "__main__":
     merge_other_csv(CSV_DIR, TARGET_DIR, {
         "4차년도.csv", "5차년도.csv", "5차년도_2차.csv"
     }, str(TARGET_DIR / "merged_others.csv"))
-    merge_dataframes(str(TARGET_DIR / "merged_others.csv"), str(TARGET_DIR / "merged_segments.csv"), str(TARGET_DIR / "merged_all.csv"))
+    merge_dataframes(
+        str(TARGET_DIR / "merged_others.csv"),
+        str(TARGET_DIR / "merged_segments.csv"),
+        str(TARGET_DIR / "merged_all.csv")
+    )
     sync_wav_and_csv(WAV_DIR, str(TARGET_DIR / "merged_all.csv"), str(TARGET_DIR / "wav_csv_diff.csv"))
     remove_nan_segment_id(str(TARGET_DIR / "merged_all.csv"))
-
-    compare_wav_and_csv(WAV_DIR, str(TARGET_DIR / "merged_all.csv"))
-    print_csv_column_count(str(TARGET_DIR / "merged_all.csv"))
-    print_csv_row_count(str(TARGET_DIR / "merged_all.csv"))
-    print_segment_id_duplicates(str(TARGET_DIR / "merged_all.csv"))
+    sort_csv_by_segment_id(str(TARGET_DIR / "merged_all.csv"))
     clean_data_except_merged_and_wav(TARGET_DIR, TARGET_DIR / "merged_all.csv", WAV_DIR)
